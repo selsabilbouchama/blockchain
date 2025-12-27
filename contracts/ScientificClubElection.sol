@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.19;
 
 contract ScientificClubElection {
-
-    // -----------------------------
-    // ADMIN
-    // -----------------------------
     address public admin;
 
     modifier onlyAdmin() {
@@ -13,15 +9,9 @@ contract ScientificClubElection {
         _;
     }
 
-    // -----------------------------
-    // ELECTION STATE
-    // -----------------------------
     enum ElectionState { NotStarted, Ongoing, Ended }
     ElectionState public electionState;
 
-    // -----------------------------
-    // DATA STRUCTURES
-    // -----------------------------
     struct Voter {
         bool isRegistered;
         bool hasVoted;
@@ -33,33 +23,25 @@ contract ScientificClubElection {
         uint voteCount;
     }
 
-    // -----------------------------
-    // STORAGE
-    // -----------------------------
     mapping(address => Voter) public voters;
+    // NEW: We need this array to know which addresses to reset later
+    address[] public voterAddresses; 
+
     mapping(uint => Candidate) public candidates;
     uint public candidatesCount;
 
-    // -----------------------------
-    // EVENTS
-    // -----------------------------
     event VoterRegistered(address voter);
     event CandidateAdded(uint candidateId, string name);
     event VoteCast(address voter, uint candidateId);
     event VotingStarted();
     event VotingEnded();
+    event ElectionReset(); // NEW EVENT
 
-    // -----------------------------
-    // CONSTRUCTOR
-    // -----------------------------
     constructor() {
         admin = msg.sender;
         electionState = ElectionState.NotStarted;
     }
 
-    // -----------------------------
-    // ADMIN FUNCTIONS
-    // -----------------------------
     function registerVoter(address _voter) public onlyAdmin {
         require(!voters[_voter].isRegistered, "Voter already registered");
 
@@ -67,7 +49,8 @@ contract ScientificClubElection {
             isRegistered: true,
             hasVoted: false
         });
-
+        
+        voterAddresses.push(_voter); // Store the address
         emit VoterRegistered(_voter);
     }
 
@@ -84,23 +67,38 @@ contract ScientificClubElection {
         emit CandidateAdded(candidatesCount, _name);
     }
 
+    // --- NEW RESET FUNCTION ---
+    function resetElection() public onlyAdmin {
+        // 1. Reset Election State
+        electionState = ElectionState.NotStarted;
+
+        // 2. Clear Candidates mapping
+        for (uint i = 1; i <= candidatesCount; i++) {
+            delete candidates[i];
+        }
+        candidatesCount = 0;
+
+        // 3. Reset all registered voters' 'hasVoted' status
+        for (uint i = 0; i < voterAddresses.length; i++) {
+            address voterAddr = voterAddresses[i];
+            voters[voterAddr].hasVoted = false;
+        }
+
+        emit ElectionReset();
+    }
+
     function startVoting() public onlyAdmin {
         require(electionState == ElectionState.NotStarted, "Voting already started or ended");
-
         electionState = ElectionState.Ongoing;
         emit VotingStarted();
     }
 
     function endVoting() public onlyAdmin {
         require(electionState == ElectionState.Ongoing, "Voting is not ongoing");
-
         electionState = ElectionState.Ended;
         emit VotingEnded();
     }
 
-    // -----------------------------
-    // VOTER FUNCTION
-    // -----------------------------
     function vote(uint _candidateId) public {
         require(electionState == ElectionState.Ongoing, "Voting is not active");
         require(voters[msg.sender].isRegistered, "You are not a registered voter");
@@ -113,9 +111,6 @@ contract ScientificClubElection {
         emit VoteCast(msg.sender, _candidateId);
     }
 
-    // -----------------------------
-    // VIEW FUNCTIONS
-    // -----------------------------
     function getCandidate(uint _candidateId)
         public
         view
